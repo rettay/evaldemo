@@ -15,14 +15,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   try {
     const raw = (req as any).body ?? {};
-    let body: any = raw;
-    if (typeof raw === "string") { try { body = JSON.parse(raw); } catch { body = {}; } }
-
+    const body = typeof raw === "string" ? JSON.parse(raw) : raw;
     const parsed = BodySchema.safeParse(body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
 
+    const token = (req.headers["authorization"] as string | undefined)?.replace(/^Bearer\s+/i, "");
     const { ruleId, targetId, variables = {} } = parsed.data;
-    const result = await executeSingleRule({ ruleId, targetId, variables });
+
+    const result = await executeSingleRule({ ruleId, targetId, variables }, token);
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("/api/run-rule error", err);

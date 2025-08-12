@@ -1,8 +1,7 @@
 import Mustache from "mustache";
-import { getPack, getRulesForPack, getTarget, getRule } from "./db";
+import { getDb, getPack, getRulesForPack, getTarget, getRule } from "./db";
 import type { ExecuteRunInput, ExecuteRunOutput, RunResult, Rule, Target, ExecuteSingleRuleInput, ExecuteSingleRuleOutput } from "./types";
 import { scoreJsonSchema } from "./scorers/jsonSchema";
-import { scoreRegex } from "./scorers/regex";
 
 function renderTemplateDeep(obj: any, ctx: Record<string, string>) {
   if (obj == null) return obj;
@@ -29,20 +28,20 @@ function extractField(io: Rule["io"], output: any) {
 function score(rule: Rule, actual: any): RunResult {
   switch (rule.scoring) {
     case "json_schema": { const r = scoreJsonSchema(rule.expected, actual); return { ruleId: rule.id, status: r.passed ? "pass" : "fail", score: r.score, details: r.details }; }
-    case "regex": { const r = scoreRegex(rule.expected, actual); return { ruleId: rule.id, status: r.passed ? "pass" : "fail", score: r.score, details: r.details }; }
     case "exact": { const want = String(rule.expected?.exact ?? ""); const got = String(actual ?? ""); const ok = want === got; return { ruleId: rule.id, status: ok ? "pass" : "fail", score: ok ? 1 : 0, details: ok ? undefined : { want, got } }; }
     default: { return { ruleId: rule.id, status: "error", score: 0, details: { error: `Unknown scorer: ${rule.scoring}` } }; }
   }
 }
 
-export async function executeRun(input: ExecuteRunInput): Promise<ExecuteRunOutput> {
+export async function executeRun(input: ExecuteRunInput, token?: string): Promise<ExecuteRunOutput> {
   const { packId, targetId, variables } = input;
-  const pack = await getPack(packId);
-  const target = await getTarget(targetId);
+  const db = getDb(token);
+  const pack = await getPack(db, packId);
+  const target = await getTarget(db, targetId);
   if (!pack) throw new Error(`Pack not found: ${packId}`);
   if (!target) throw new Error(`Target not found: ${targetId}`);
+  const rules = await getRulesForPack(db, pack);
 
-  const rules = await getRulesForPack(pack);
   const runId = `run_${Date.now()}`;
   const startedAt = new Date().toISOString();
 
@@ -57,10 +56,11 @@ export async function executeRun(input: ExecuteRunInput): Promise<ExecuteRunOutp
   return { runId, packId, targetId, startedAt, finishedAt, passCount, results };
 }
 
-export async function executeSingleRule(input: ExecuteSingleRuleInput): Promise<ExecuteSingleRuleOutput> {
+export async function executeSingleRule(input: ExecuteSingleRuleInput, token?: string): Promise<ExecuteSingleRuleOutput> {
   const { ruleId, targetId, variables } = input;
-  const rule = await getRule(ruleId);
-  const target = await getTarget(targetId);
+  const db = getDb(token);
+  const rule = await getRule(db, ruleId);
+  const target = await getTarget(db, targetId);
   if (!rule) throw new Error(`Rule not found: ${ruleId}`);
   if (!target) throw new Error(`Target not found: ${targetId}`);
   const { output } = await callHttpTarget(target, rule.promptTemplate, variables);
