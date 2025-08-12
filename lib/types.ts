@@ -47,3 +47,6 @@ export type ExecuteRunOutput = {
   passCount: number;
   results: RunResult[];
 };
+
+export type ExecuteSingleRuleInput = { ruleId: string; targetId: string; variables: Record<string,string> };
+export type ExecuteSingleRuleOutput = { ruleId: string; status: "pass"|"fail"|"error"; score: number; details?: any };
