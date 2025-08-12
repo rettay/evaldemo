@@ -1,12 +1,13 @@
 {
   "name": "evalsify-demo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "ajv": "^8.17.1",
     "mustache": "^4.2.0",
     "zod": "^3.23.8"
@@ -16,7 +17,4 @@
     "@vercel/node": "^3.2.0",
     "typescript": "^5.5.4"
   }
-}
-{
-  "description": "A demo project for evalsify, showcasing TypeScript type checking and JSON schema validation."
 }
