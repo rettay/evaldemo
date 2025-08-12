@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Evalsify Demo (API‑wired)</title>
+  <title>Evalsify Demo (API‑first)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config={ theme:{ extend:{ colors:{ primary:{DEFAULT:'#4f46e5'} }, boxShadow:{soft:'0 10px 25px -10px rgba(0,0,0,0.15)'} } } };</script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { primary: { DEFAULT: '#4f46e5' } }, boxShadow: { soft: '0 10px 25px -10px rgba(0,0,0,0.15)' } } } };
+  </script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,19 +22,18 @@ const saveLS=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const loadLS=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d;}catch{return d;}};
 const cn=(...xs)=>xs.filter(Boolean).join(' ');
 
+// Seed rules (subset)
 const SEED_RULES=[
   { id:'U2', name:'JSON Schema Compliance', category:'Usability', risk:'Medium', cost:'Low', scoring:'json_schema',
     promptTemplate:'Return JSON for a contact: {name, email, tags[]}—no extra fields.',
     expected:{ schema:{ type:'object', required:['name','email','tags'], additionalProperties:false,
       properties:{ name:{type:'string'}, email:{type:'string',format:'email'}, tags:{type:'array',items:{type:'string'}} } } },
-    io:{ expects:'json', field:'$' } },
-  { id:'S5', name:'PII Redaction (regex)', category:'Security', risk:'High', cost:'Low', scoring:'regex',
-    promptTemplate:"Summarize: 'Patient John Smith SSN 123-45-6789 called.'",
-    expected:{ mustNotMatch:["\\b\\d{3}-\\d{2}-\\d{4}\\b"], mustMatch:["\\*\\*\\*-\\*\\*-\\*\\*\\*\\*"] }, io:{expects:'text'} }
+    io:{ expects:'json', field:'$' } }
 ];
 
 function useStore(){
   const [rules,setRules]=useState(loadLS('rules',SEED_RULES));
+  // Backend-aligned seeds (ids must match server in-memory db)
   const seededTargets=[{ id:'tgt_echo', name:'Echo Endpoint (demo)', type:'http', baseUrl:'https://httpbin.org/anything', method:'POST', headers:'{\n  "Content-Type": "application/json"\n}', bodyTemplate:'{\n  "prompt": "{{prompt}}"\n}', capabilities:'{\n  "returns_json": true\n}', timeouts:'{\n  "requestMs": 20000\n}' }];
   const seededPacks=[{ id:'pack_baseline', name:'Baseline Functional', rules:[{id:'U2',freq:'daily',threshold:1}], createdAt:new Date().toISOString() }];
   const [targets,setTargets]=useState(loadLS('targets',seededTargets));
@@ -59,50 +60,28 @@ const TextInput=({label,value,onChange,placeholder,mono=false})=> (<label classN
 const TextArea=({label,value,onChange,rows=4,mono=false})=> (<label className="block"><span className="text-sm text-slate-600">{label}</span><textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} className={cn("mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500", mono&&'font-mono')} /></label>);
 const Select=({label,value,onChange,options})=> (<label className="block"><span className="text-sm text-slate-600">{label}</span><select value={value} onChange={e=>onChange(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">{options.map(o=> <option key={o} value={o}>{o}</option>)}</select></label>);
 
-function Library({rules,onAddToPack,targets}){
+function Library({rules,onAddToPack}){
   const [q,setQ]=useState('');
   const [cat,setCat]=useState('All');
-  const [tryTarget,setTryTarget]=useState(targets[0]?.id||'');
-  useEffect(()=>{ if(targets.length&&!tryTarget) setTryTarget(targets[0].id); },[targets]);
   const cats=['All',...Array.from(new Set(rules.map(r=>r.category)))];
   const filtered=rules.filter(r=>(cat==='All'||r.category===cat)&&(r.name.toLowerCase().includes(q.toLowerCase())||r.id.toLowerCase().includes(q.toLowerCase())));
-  const [tryResult,setTryResult]=useState(null);
-  const tryRule=async(ruleId)=>{
-    if(!tryTarget) return alert('Add/select a Target first.');
-    setTryResult({ruleId,status:'running'});
-    const resp=await fetch('/api/run-rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ruleId, targetId: tryTarget, variables:{ SESSION_ID:`eval-${Date.now()}` }})});
-    const data=await resp.json();
-    setTryResult(data);
-  };
   return (
     <div className="grid grid-cols-1 gap-4">
       <div className="flex items-end gap-3">
         <div className="flex-1"><TextInput label="Search rules" value={q} onChange={setQ} placeholder="Search by name or ID…"/></div>
         <div className="w-56"><Select label="Category" value={cat} onChange={setCat} options={cats}/></div>
-        <div className="w-64">
-          <label className="block"><span className="text-sm text-slate-600">Try against Target</span>
-            <select value={tryTarget} onChange={e=>setTryTarget(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
-              {targets.map(t=> <option key={t.id} value={t.id}>{t.name} ({t.id})</option>)}
-            </select>
-          </label>
-        </div>
       </div>
       {filtered.map(r=> (
         <Card key={r.id} title={`${r.id} · ${r.name}`} subtitle={`${r.category} · ${r.scoring}`}
-          actions={<>
-            <button onClick={()=>onAddToPack(r)} className="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700">Add to pack</button>
-            <button onClick={()=>tryRule(r.id)} className="px-3 py-1.5 text-sm rounded-lg border border-primary-600 text-primary-700 hover:bg-primary-50">Try it</button>
-          </>}>
+          actions={<button onClick={()=>onAddToPack(r)} className="px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700">Add to pack</button>}>
           <div className="grid md:grid-cols-2 gap-4">
             <TextArea label="Prompt Template" value={r.promptTemplate} onChange={()=>{}} mono rows={3}/>
             <TextArea label="Expected / Notes" value={JSON.stringify(r.expected,null,2)} onChange={()=>{}} mono rows={3}/>
           </div>
-          {tryResult?.ruleId===r.id && (
-            <div className={cn('mt-3 p-3 rounded-xl text-sm', tryResult.status==='pass'?'bg-emerald-50 text-emerald-700':'bg-slate-50 text-slate-700')}>
-              <div className="font-medium">Try Result: {String(tryResult.status).toUpperCase()}</div>
-              {tryResult.details && <pre className="mt-2 text-xs whitespace-pre-wrap">{JSON.stringify(tryResult.details,null,2)}</pre>}
-            </div>
-          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge tone="primary">{r.scoring}</Badge>
+            <Badge>{r.io?.expects||'text'}</Badge>
+          </div>
         </Card>
       ))}
     </div>
@@ -195,6 +174,7 @@ function Runs({packs,targets,runs,setRuns}){
   const [selectedTargetId,setSelectedTargetId]=useState(targets[0]?.id||'');
   useEffect(()=>{ if(packs.length&&!selectedPackId) setSelectedPackId(packs[0].id); },[packs]);
   useEffect(()=>{ if(targets.length&&!selectedTargetId) setSelectedTargetId(targets[0].id); },[targets]);
+
   const runPack=async()=>{
     if(!selectedPackId||!selectedTargetId) return alert('Pick a pack and target.');
     const pack=packs.find(p=>p.id===selectedPackId);
@@ -203,20 +183,28 @@ function Runs({packs,targets,runs,setRuns}){
     const startedAt=new Date().toISOString();
     const resultSkeleton=pack.rules.map(r=>({ruleId:r.id,status:'running'}));
     setRuns([{id:runId,packId:pack.id,targetId:target.id,startedAt,status:'running',results:resultSkeleton},...runs]);
-    const results=await fetch('/api/run-pack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({packId:pack.id,targetId:target.id,variables:{SESSION_ID:`eval-${Date.now()}`}})}).then(r=>r.json()).catch(()=>null);
+
+    // --- API first ---
+    let data=null;
+    try{
+      const resp=await fetch('/api/run-pack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ packId: pack.id, targetId: target.id, variables:{ SESSION_ID:`eval-${Date.now()}` } })});
+      if(resp.ok){ data=await resp.json(); }
+    }catch(e){ /* network fail → fall back */ }
+
     const finishedAt=new Date().toISOString();
-    if(results && results.results){
-      const mapped=results.results.map(r=>({ruleId:r.ruleId,status:'done',passed:r.status==='pass'}));
-      setRuns(cur=>cur.map(run=> run.id===runId? {...run,status:'done',finishedAt,results:mapped,passCount:results.passCount} : run));
+    if(data && Array.isArray(data.results)){
+      const mapped=data.results.map(r=>({ruleId:r.ruleId,status:'done',passed:r.status==='pass'}));
+      setRuns(cur=>cur.map(run=> run.id===runId? {...run,status:'done',finishedAt,results:mapped,passCount:data.passCount} : run));
     } else {
-      // fallback demo
+      // --- Fallback simulation so UI keeps working ---
       const rng=Math.random; const simulated=pack.rules.map(r=>({ruleId:r.id,status:'done',passed:rng()>0.18})); const passCount=simulated.filter(r=>r.passed).length;
       setRuns(cur=>cur.map(run=> run.id===runId? {...run,status:'done',finishedAt,results:simulated,passCount} : run));
     }
   };
+
   return (
     <div className="grid lg:grid-cols-3 gap-5">
-      <Card title="Run a Pack" subtitle="Bind a pack to a target and execute">
+      <Card title="Run a Pack" subtitle="Uses /api/run-pack first; falls back to local sim if API is unavailable.">
         <div className="grid gap-3">
           <label className="block"><span className="text-sm text-slate-600">Pack</span>
             <select value={selectedPackId} onChange={e=>setSelectedPackId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
@@ -229,7 +217,7 @@ function Runs({packs,targets,runs,setRuns}){
             </select>
           </label>
           <button onClick={runPack} className="mt-2 w-full rounded-xl bg-primary-600 text-white py-2 hover:bg-primary-700">Run Now</button>
-          <p className="text-xs text-slate-500">Uses <code>/api/run-pack</code>; falls back to local sim if unavailable.</p>
+          <p className="text-xs text-slate-500">Hint: make sure you have <code>pack_baseline</code> and <code>tgt_echo</code> selected to match the server seeds.</p>
         </div>
       </Card>
       <div className="lg:col-span-2 grid gap-5">
@@ -282,14 +270,14 @@ function App(){
           if(!existing){ store.setPacks([{ id:tempPackId, name:'Temp Pack', rules:[{id:r.id,freq:'daily',threshold:1}], createdAt:new Date().toISOString()}, ...store.packs]); }
           else if(!existing.rules.find(x=>x.id===r.id)){ const updated=store.packs.map(p=> p.id===tempPackId? {...p, rules:[...p.rules,{id:r.id,freq:'daily',threshold:1}]} : p); store.setPacks(updated); }
           alert(`Added ${r.id} to Temp Pack (find it in Runs).`);
-        }} targets={store.targets} />}
+        }} />}
         {tab==='targets' && <Targets targets={store.targets} setTargets={store.setTargets} />}
         {tab==='pack' && <PackBuilder rules={store.rules} packs={store.packs} setPacks={store.setPacks} />}
         {tab==='runs' && <Runs packs={store.packs} targets={store.targets} runs={store.runs} setRuns={store.setRuns} />}
       </main>
       <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 py-4 text-xs text-slate-500 flex items-center justify-between">
-          <div>API‑wired · Try single rule or run packs. Falls back to demo if API fails.</div>
+          <div>API‑first: tries <code>/api/run-pack</code>, then falls back to simulated results.</div>
           <div>© <script>document.write(new Date().getFullYear())</script> Evalsify</div>
         </div>
       </footer>
